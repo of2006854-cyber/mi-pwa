@@ -1,0 +1,22 @@
+LIENZO INFINITO - APP INSTALABLE (PWA)
+
+Contenido (todos los archivos deben quedar JUNTOS en la misma carpeta del sitio):
+  index.html                -> el lienzo
+  manifest.webmanifest      -> nombre, colores e iconos de la app
+  sw.js                     -> permite abrirla sin internet
+  icon-192.png, icon-512.png, icon-maskable-512.png -> iconos
+
+PUBLICAR (gratis), opcion facil con computadora - Netlify Drop:
+  1. Descomprime este zip.
+  2. Entra a https://app.netlify.com/drop
+  3. Arrastra la CARPETA descomprimida (no el zip suelto dentro de otra carpeta).
+  4. Te da una direccion https://algo.netlify.app
+
+INSTALAR EN EL CELULAR:
+  1. Abre esa direccion en Chrome.
+  2. Menu de los tres puntos -> "Instalar aplicacion" (o "Anadir a pantalla de inicio").
+  3. Abre el icono "Lienzo" desde tu pantalla de inicio.
+
+NOTAS:
+  - Tus dibujos se guardan en ese navegador, en esa direccion. Si cambias de direccion, no se ven.
+  - Usa el boton de guardar proyecto para tener copias.
