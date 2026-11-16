@@ -434,9 +434,179 @@ $('dl5').onclick=()=>{$('dlg').hidden=true};
 $('dk').setAttribute('aria-pressed',dark);refreshSw();resize();
 </script>
 <script>
-if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
-  addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
 }
 </script>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+ 
+<script>
+/* CONEXIÓN CON GOOGLE DRIVE */
+var LIENZO_DRIVE_CLIENT_ID = '458633924709-3u1ogmvk8hu20jvn6daiaet0bo7hakm9.apps.googleusercontent.com';
+var lienzoDriveToken = null;
+var lienzoDriveFolder = localStorage.getItem('lienzo-drive-folder');
+
+function lienzoDriveGetToken() {
+  return new Promise(function(resolve, reject) {
+    if (lienzoDriveToken) return resolve(lienzoDriveToken);
+
+    if (!window.google || !google.accounts || !google.accounts.oauth2) {
+      return reject(new Error('Espera unos segundos y toca la nube otra vez.'));
+    }
+
+    var client = google.accounts.oauth2.initTokenClient({
+      client_id: LIENZO_DRIVE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: function(response) {
+        if (response.error || !response.access_token) {
+          return reject(new Error('No se pudo conectar con Google.'));
+        }
+        lienzoDriveToken = response.access_token;
+        resolve(lienzoDriveToken);
+      }
+    });
+
+    client.requestAccessToken();
+  });
+}
+
+async function lienzoDriveRequest(url, options) {
+  var token = await lienzoDriveGetToken();
+  options = options || {};
+  options.headers = Object.assign({}, options.headers || {}, {
+    Authorization: 'Bearer ' + token
+  });
+
+  var response = await fetch(url, options);
+  if (response.status === 401) {
+    lienzoDriveToken = null;
+    throw new Error('Sesión vencida. Toca la nube para reconectar.');
+  }
+  if (!response.ok) {
+    throw new Error('Google Drive respondió con error ' + response.status);
+  }
+  return response;
+}
+
+async function lienzoDriveEnsureFolder() {
+  if (lienzoDriveFolder) {
+    var check = await lienzoDriveRequest(
+      'https://www.googleapis.com/drive/v3/files/' +
+      encodeURIComponent(lienzoDriveFolder) +
+      '?fields=id,trashed'
+    );
+    var info = await check.json();
+    if (!info.trashed) return lienzoDriveFolder;
+  }
+
+  var response = await lienzoDriveRequest(
+    'https://www.googleapis.com/drive/v3/files?fields=id',
+    {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: 'Lienzo infinito',
+        mimeType: 'application/vnd.google-apps.folder'
+      })
+    }
+  );
+
+  var folder = await response.json();
+  lienzoDriveFolder = folder.id;
+  localStorage.setItem('lienzo-drive-folder', folder.id);
+  return folder.id;
+}
+
+async function lienzoDriveSnapshot() {
+  var copies = [];
+
+  for (var s of strokes) {
+    var c = Object.assign({}, s);
+    if (c.img && !c.src && c.id) {
+      c.src = await idbGet(c.id);
+    }
+    if (c.img && !c.src) {
+      throw new Error('No se pudo recuperar una imagen.');
+    }
+    copies.push(c);
+  }
+
+  return {
+    v: 1,
+    t: Date.now(),
+    strokes: copies,
+    view: Object.assign({}, view),
+    dark: dark
+  };
+}
+
+async function lienzoDriveSyncNow() {
+  if (window.lienzoDriveBusy) return;
+  window.lienzoDriveBusy = true;
+
+  try {
+    await lienzoDriveGetToken();
+    var folderId = await lienzoDriveEnsureFolder();
+    var snapshot = await lienzoDriveSnapshot();
+
+    var fileId = localStorage.getItem('lienzo-drive-file');
+    var metadata = {
+      name: 'respaldo-lienzo.json',
+      mimeType: 'application/json'
+    };
+
+    var url;
+    var method;
+
+    if (fileId) {
+      url = 'https://www.googleapis.com/upload/drive/v3/files/' +
+        encodeURIComponent(fileId) +
+        '?uploadType=multipart&fields=id';
+      method = 'PATCH';
+    } else {
+      metadata.parents = [folderId];
+      url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id';
+      method = 'POST';
+    }
+
+    var boundary = 'lienzo_' + Date.now();
+    var body =
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) + '\r\n' +
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/json\r\n\r\n' +
+      JSON.stringify(snapshot) + '\r\n' +
+      '--' + boundary + '--';
+
+    var response = await lienzoDriveRequest(url, {
+      method: method,
+      headers: {
+        'Content-Type': 'multipart/related; boundary=' + boundary
+      },
+      body: body
+    });
+
+    var result = await response.json();
+    localStorage.setItem('lienzo-drive-file', result.id);
+    $('sv').classList.remove('dirty');
+    toast('Respaldo guardado en Google Drive');
+  } catch (error) {
+    toast(error.message || 'Error al guardar en Drive');
+  } finally {
+    window.lienzoDriveBusy = false;
+  }
+}
+
+/* BOTÓN DE NUBE */
+var lienzoDriveButton = $('driveBtn');
+if (lienzoDriveButton) {
+  lienzoDriveButton.addEventListener('click', lienzoDriveSyncNow);
+}
+</script>
+
 </body>
 </html>
